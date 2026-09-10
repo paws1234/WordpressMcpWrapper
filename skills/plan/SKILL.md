@@ -31,7 +31,7 @@ Do not invent a plan, and do not start work until you have one.
 - Follow the project's rules: the `wordpress-best-practices` skill before writing PHP, and the
   `visual-testing` skill whenever appearance matters. Use the MCP servers rather than guessing
   at Elementor data or WordPress state.
-- Verify as you go. `~/wp-kit/bin/wpdev smoke` for anything touching the plugin or the theme.
+- Verify as you go. `__KIT__/bin/wpdev smoke` for anything touching the plugin or the theme.
   Report evidence — command output, ids, screenshots — not assurances.
 - If a step is wrong, ambiguous, or turns out to be impossible, stop and say so. Do not quietly
   substitute a different plan.

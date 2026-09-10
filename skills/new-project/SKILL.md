@@ -32,7 +32,7 @@ If no project name was given, ask for one and stop. Do not invent one.
    working. Use the absolute path: `wpdev` is not on the PATH of a non-login shell.
 
    ```bash
-   ~/wp-kit/bin/wpdev new <project-name> [flags]
+   __KIT__/bin/wpdev new <project-name> [flags]
    ```
 
    This takes a minute or two. It starts the containers, installs WordPress, Elementor and the

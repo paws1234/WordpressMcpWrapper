@@ -1,6 +1,6 @@
 # __PROJECT_NAME__
 
-A local WordPress site managed by `wpdev`, from a reusable kit at `~/wp-kit`. Read this
+A local WordPress site managed by `wpdev`, from a reusable kit at `__KIT__`. Read this
 before doing anything: it covers how to run commands, which MCP server does what, and the
 rules that are easy to get wrong.
 
@@ -15,13 +15,13 @@ rules that are easy to get wrong.
 
 | Command | Purpose |
 | --- | --- |
-| `~/wp-kit/bin/wpdev status` | container status |
-| `~/wp-kit/bin/wpdev up` / `down` | start / stop (data kept) |
-| `~/wp-kit/bin/wpdev wp <args>` | WP-CLI, e.g. `wp post list --post_type=portfolio` |
-| `~/wp-kit/bin/wpdev shell` | shell inside the cli container |
-| `~/wp-kit/bin/wpdev smoke` | end-to-end MCP test — run this to verify a change |
-| `~/wp-kit/bin/wpdev sync` | regenerate the MCP configs and this file from `.env` |
-| `~/wp-kit/bin/wpdev logs` | follow the WordPress logs |
+| `__KIT__/bin/wpdev status` | container status |
+| `__KIT__/bin/wpdev up` / `down` | start / stop (data kept) |
+| `__KIT__/bin/wpdev wp <args>` | WP-CLI, e.g. `wp post list --post_type=portfolio` |
+| `__KIT__/bin/wpdev shell` | shell inside the cli container |
+| `__KIT__/bin/wpdev smoke` | end-to-end MCP test — run this to verify a change |
+| `__KIT__/bin/wpdev sync` | regenerate the MCP configs and this file from `.env` |
+| `__KIT__/bin/wpdev logs` | follow the WordPress logs |
 
 ## The MCP servers
 
@@ -74,20 +74,20 @@ Call them through `mcp-adapter-execute-ability` with
 1. **Declare new plugin and theme directories.** Only `wp-content/themes/__PROJECT_THEME__`,
    `wp-content/uploads`, and the kit's plugin are mounted into the container. Creating
    `wp-content/plugins/my-thing/` by hand does nothing — the container never sees it. Use
-   `~/wp-kit/bin/wpdev add plugin <slug>` (or `add theme <slug>`), which creates the directory,
+   `__KIT__/bin/wpdev add plugin <slug>` (or `add theme <slug>`), which creates the directory,
    adds the mount, and recreates the container.
 2. **Never hand-write Elementor data.** Use the MCP tools or the abilities above. Writing
    `_elementor_data` with `update_post_meta()` leaves Elementor's generated CSS stale; every
    path here goes through Elementor's Document API, which handles versioning and the cache.
 3. **Do not change `PROJECT_NAME` in `.env`.** It names the Docker volumes. Changing it points
    the site at an empty database.
-4. **Verify with `~/wp-kit/bin/wpdev smoke`** after changing the theme or the plugin. It runs
+4. **Verify with `__KIT__/bin/wpdev smoke`** after changing the theme or the plugin. It runs
    ten checks through the real MCP endpoint and cleans up after itself.
 
 ## Things that look like errors but are not
 
 - `wp db check` / `wp db export` fail: the `wordpress:` image has no `mysql` client. Use
-  `~/wp-kit/bin/wpdev wp option get siteurl` or any command that goes through PHP.
+  `__KIT__/bin/wpdev wp option get siteurl` or any command that goes through PHP.
 - `wp rewrite structure ... --hard` warns about regenerating `.htaccess`. Harmless: the image
   already ships a working `.htaccess`, which is why permalinks work.
 - A Playwright tool fails to launch a browser. Chromium is not installed yet; run

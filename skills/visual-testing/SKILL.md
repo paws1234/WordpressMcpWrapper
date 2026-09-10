@@ -21,7 +21,7 @@ will not resolve from the browser.
 ## Procedure
 
 1. **Resolve the URL.** For a page you just created, prefer the `preview_url` the tool
-   returned. For any other page, find its id with `~/wp-kit/bin/wpdev wp post list` and use
+   returned. For any other page, find its id with `__KIT__/bin/wpdev wp post list` and use
    `http://localhost:<WP_PORT>/?page_id=<id>`. Also check the post is published — a draft
    returns 404 to an anonymous browser.
 2. **Navigate** to it with the Playwright tools.

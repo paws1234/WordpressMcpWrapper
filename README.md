@@ -63,6 +63,10 @@ docs/                SETUP.md (full walkthrough), PROMPTS.md (what to ask for)
 cache/               gitignored downloads
 ```
 
+Files that `wpdev` copies or generates — everything under `template/`, `skills/` and `docs/` —
+use a `__KIT__` placeholder rather than a fixed path. `wpdev` substitutes the real location of
+your checkout as it renders them, so the wrapper works from any clone directory.
+
 ## Documentation
 
 - [`docs/SETUP.md`](docs/SETUP.md) — architecture, daily commands, and the MCP wiring for both

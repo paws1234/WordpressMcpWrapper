@@ -60,6 +60,21 @@ prettify() {
 	printf '%s' "$1" | tr '-' ' ' | sed 's/\b\(.\)/\u\1/g'
 }
 
+kit_escaped() {
+	# KIT goes into a sed replacement, where the delimiter, backslashes and ampersands are
+	# special. Escape them so an awkward checkout path cannot corrupt a generated file.
+	local p="${KIT//\\/\\\\}"
+	p="${p//&/\\&}"
+	printf '%s' "${p//|/\\|}"
+}
+
+render_template() {
+	# Copy a kit file, substituting __KIT__ with this checkout's real path. The kit can be
+	# cloned anywhere, so nothing generated or installed may hardcode its location.
+	local src="$1" dest="$2"
+	sed "s|__KIT__|$(kit_escaped)|g" "$src" > "$dest"
+}
+
 project_dir() {
 	local dir="${1:-$PWD}"
 	dir="$(cd "$dir" && pwd)"
@@ -300,6 +315,7 @@ write_claude_md() {
 	sed -e "s|__PROJECT_NAME__|$(env_value "$dir" PROJECT_NAME)|g" \
 		-e "s|__SITE_URL__|$(env_value "$dir" SITE_URL)|g" \
 		-e "s|__PROJECT_THEME__|$(env_value "$dir" PROJECT_THEME)|g" \
+		-e "s|__KIT__|$(kit_escaped)|g" \
 		"$KIT/template/CLAUDE.md" > "$dir/CLAUDE.md"
 }
 
@@ -363,7 +379,7 @@ cmd_install_skills() {
 			[ -d "$skill_dir" ] || continue
 			name="$(basename "$skill_dir")"
 			mkdir -p "$base/$name"
-			cp "$skill_dir/SKILL.md" "$base/$name/SKILL.md"
+			render_template "$skill_dir/SKILL.md" "$base/$name/SKILL.md"
 			info "installed $name -> $base/$name/SKILL.md"
 		done
 	done
@@ -382,7 +398,7 @@ write_plan_template() {
 	fi
 
 	mkdir -p "$dir/.claude"
-	cp "$KIT/template/plan.md" "$target"
+	render_template "$KIT/template/plan.md" "$target"
 	info "created .claude/plan.md - write your plan there, then run /plan"
 }
 
@@ -437,7 +453,8 @@ cmd_new() {
 	: > "$target/$MARKER"
 	cp "$KIT/template/$COMPOSE_FILE" "$target/$COMPOSE_FILE"
 	cp "$KIT/template/.gitignore" "$target/.gitignore"
-	cp "$KIT/docs/SETUP.md" "$KIT/docs/PROMPTS.md" "$target/docs/"
+	render_template "$KIT/docs/SETUP.md" "$target/docs/SETUP.md"
+	render_template "$KIT/docs/PROMPTS.md" "$target/docs/PROMPTS.md"
 
 	sed -e "s|__PROJECT_NAME__|$title|g" -e "s|__PROJECT_THEME__|$theme|g" \
 		"$KIT/template/theme/style.css" > "$target/wp-content/themes/$theme/style.css"

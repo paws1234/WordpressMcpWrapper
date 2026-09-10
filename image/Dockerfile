@@ -3,7 +3,7 @@
 # Built once and referenced by tag from each project's compose file, so starting a
 # new project never waits on a WordPress image build.
 #
-# Two deliberate choices, both documented in ~/wp-kit/docs/README.md:
+# Two deliberate choices, both explained below:
 #
 # 1. No Composer / no PHPUnit. The stock wp-env image runs
 #    `composer global require phpunit/phpunit`, and on this host containers resolve

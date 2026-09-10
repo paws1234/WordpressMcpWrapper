@@ -54,8 +54,8 @@ Work in this order, and do not skip the final step.
 
 1. State the behaviour you are trying to produce, or reproduce the failure.
 2. Make the smallest change that could produce it.
-3. Run it. In this project that means `~/wp-kit/bin/wpdev smoke` for anything touching the
-   plugin or theme, `~/wp-kit/bin/wpdev wp <args>` to inspect state, and the
+3. Run it. In this project that means `__KIT__/bin/wpdev smoke` for anything touching the
+   plugin or theme, `__KIT__/bin/wpdev wp <args>` to inspect state, and the
    `visual-testing` skill when appearance matters.
 4. Report the evidence — command output, returned id, screenshot path — not an assertion.
    "Should work" is not a result, and neither is "done" without having looked.
@@ -64,7 +64,7 @@ Work in this order, and do not skip the final step.
 ## Mistakes already made in this project
 
 - Creating `wp-content/plugins/<name>/` by hand. The container never sees it, and nothing
-  errors. Use `~/wp-kit/bin/wpdev add plugin <name>`.
+  errors. Use `__KIT__/bin/wpdev add plugin <name>`.
 - Writing `_elementor_data` with `update_post_meta()`. Generated CSS goes stale. Use the MCP
   tools or the abilities.
 - Reading or modifying Elementor's generated CSS files.

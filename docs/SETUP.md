@@ -17,7 +17,7 @@ flowchart LR
         DB[(mariadb)]
     end
 
-    subgraph kit["~/wp-kit (shared)"]
+    subgraph kit["__KIT__ (shared)"]
         P[wp-agent-bridge plugin]
         I["wp-dev image"]
     end
@@ -94,7 +94,7 @@ wp-content/themes/       project themes
 wp-content/uploads/      media
 ```
 
-`wp-agent-bridge` is **not** here: it is mounted from `~/wp-kit/shared/plugins/`, so updating
+`wp-agent-bridge` is **not** here: it is mounted from `__KIT__/shared/plugins/`, so updating
 it once updates every project. Third-party plugins (Elementor, MCP Adapter) are installed into
 the container's volume, not into this directory.
 
