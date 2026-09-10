@@ -24,7 +24,8 @@ will not resolve from the browser.
    returned. For any other page, find its id with `__KIT__/bin/wpdev wp post list` and use
    `http://localhost:<WP_PORT>/?page_id=<id>`. Also check the post is published — a draft
    returns 404 to an anonymous browser.
-2. **Navigate** to it with the Playwright tools.
+2. **Navigate** to it with the browser tools the session exposes — whichever browser they drive,
+   it must be the one you then screenshot and close.
 3. **Screenshot at three widths.** Elementor layouts are responsive, and a desktop
    screenshot hides most of the breakage:
    - desktop — 1440 x 900
@@ -34,11 +35,32 @@ will not resolve from the browser.
    the three-column grid three columns, has anything overflowed, is any text invisible.
 5. **Fix, then re-shoot.** Never report success from a screenshot taken before your last
    change.
+6. **Close the page when you are done with it** — see *Leaving nothing stale* below.
+
+## Leaving nothing stale
+
+A page is not evidence on its own, and an old page is worse than none: it looks current.
+
+- **Re-open every round.** Page ids do not survive. A page opened earlier in the conversation,
+  or one the client re-attaches when a session starts, is usually already gone, and a page that
+  still answers may be holding a render from before your last change. Navigate to the URL again
+  in this session and shoot after the change you are about to report — never before.
+- **One page per run.** Open once, reuse for all three widths and for every re-shoot. A tab per
+  viewport is what leaves a trail of stale pages behind.
+- **Close it at the end.** Use whatever close the session's tools expose; if there is none, say
+  which URLs you left open so the user can close them, and do not leave the last screenshot as
+  the only trace of the last edit.
+- **Do not assume the code-execution tool can close it.** That tool drives a different browser
+  from the navigate/screenshot tools (`run_playwright_code` answers "Page not found" for a page
+  id those tools read fine), so a `page.close()` there is not a cleanup step you have.
 
 ## What to look for
 
 - **Unstyled page.** Nearly always Elementor's generated CSS being stale. Call the
   `clear-elementor-cache` ability, reload, and shoot again.
+- **A stale render** — the shot is byte-identical to the previous one, or still shows the old
+  price, stock badge or copy. Re-navigate and shoot again before drawing any conclusion from
+  it; a stale render has cost real time on this project already.
 - **Horizontal scrollbar**, i.e. content wider than the viewport. Usually a fixed width or
   stray padding on a container.
 - **Collapsed or wrapped columns** at tablet where you expect three across.
