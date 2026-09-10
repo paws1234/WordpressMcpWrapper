@@ -1,5 +1,8 @@
-# Copied verbatim into every project. Everything project-specific comes from the
-# .env file beside it, which is why this file is identical everywhere.
+# Copied verbatim into every project as docker-compose.yml. Everything project-specific
+# comes from the .env file beside it, which is why this file is identical everywhere.
+#
+# The .tmpl suffix is deliberate: VS Code's containers extension offers "Compose Up" for any
+# file named docker-compose.yml, and this one can never run on its own.
 #
 # THIS IS A TEMPLATE, NOT A STACK. There is no .env beside it here, so running it from
 # the kit leaves every ${...} below empty and compose aborts with

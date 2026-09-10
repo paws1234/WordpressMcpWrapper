@@ -20,7 +20,11 @@ IMAGE="${WPDEV_IMAGE:-wp-dev:php8.3}"
 PROJECTS_ROOT="${WPDEV_ROOT:-$HOME/dev}"
 REGISTRY="${WPDEV_REGISTRY:-$HOME/.config/wpdev/projects}"
 MARKER=".wpdev-project"
+# The template carries a suffix deliberately: VS Code's containers extension treats any file
+# named docker-compose.yml as a runnable stack and offers to start it, which a template that
+# needs the project's .env can never be. COMPOSE_FILE is the name it gets inside a project.
 COMPOSE_FILE="docker-compose.yml"
+COMPOSE_TEMPLATE="$COMPOSE_FILE.tmpl"
 
 die() { printf 'wpdev: %s\n' "$*" >&2; exit 1; }
 info() { printf '==> %s\n' "$*"; }
@@ -459,7 +463,7 @@ cmd_new() {
 		"$target/docs"
 
 	: > "$target/$MARKER"
-	cp "$KIT/template/$COMPOSE_FILE" "$target/$COMPOSE_FILE"
+	cp "$KIT/template/$COMPOSE_TEMPLATE" "$target/$COMPOSE_FILE"
 	cp "$KIT/template/.gitignore" "$target/.gitignore"
 	render_template "$KIT/docs/SETUP.md" "$target/docs/SETUP.md"
 	render_template "$KIT/docs/PROMPTS.md" "$target/docs/PROMPTS.md"

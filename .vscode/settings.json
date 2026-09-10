@@ -1,0 +1,6 @@
+{
+    "//": "The compose template is not named docker-compose.yml on purpose (see its header), so tell the editor to keep treating it as YAML.",
+    "files.associations": {
+        "*.yml.tmpl": "yaml"
+    }
+}
