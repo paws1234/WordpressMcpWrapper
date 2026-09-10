@@ -3,11 +3,14 @@ Plan for: <what you want to build>
 
 Replace this entire comment with your plan, then run /plan in Claude Code or Copilot.
 
-Anything readable works: numbered steps, a spec, acceptance criteria, prompts to run in order.
-The agent reads the file, restates it as a checklist so you can correct it, then works through
-it, verifying each step.
+/plan reads this file and splits it into tasks in a file beside it - this one becomes
+.claude/tasks.md. Each task carries the context to load, its scope and out-of-scope limits,
+acceptance criteria and the command that verifies it, so it can also be run on its own in a
+fresh session. /plan shows you the tasks and waits for your confirmation before changing
+anything, then works through them one at a time, ticking them off in the task file. This file
+is never edited.
 
-A shape that works well:
+The more your plan says about limits, the better the tasks it produces, so name them:
 
     # Plan: <what you want to build>
 
@@ -18,6 +21,9 @@ A shape that works well:
     1.
     2.
 
+    ## Constraints / Out of scope
+    What must not change: files, behaviour, dependencies.
+
     ## Done when
     -
 
@@ -25,6 +31,7 @@ To keep a plan somewhere else, name it instead:
 
     /plan docs/pricing-page-plan.md
 
-While this file is only comments, /plan treats it as unwritten and asks you for the plan
-rather than executing this text.
+which writes docs/pricing-page-tasks.md. A plan cannot be pasted into the chat: while this
+file is only comments, /plan treats it as unwritten and asks you for a plan file rather than
+executing this text.
 -->

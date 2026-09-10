@@ -131,12 +131,18 @@ claude mcp get wordpress
 
 Each project gets `.claude/plan.md`, created by `wpdev` and never overwritten once you have
 written in it. Put your plan there — a numbered list, a spec, whatever reads clearly — then run
-`/plan`. You can also keep a plan elsewhere and name it (`/plan docs/pricing-page-plan.md`), or
-just paste the plan into the chat and run `/plan`.
+`/plan`. You can also keep a plan elsewhere and name it (`/plan docs/pricing-page-plan.md`).
+There is no paste path: with no plan file, `/plan` asks you for one.
 
-The command restates your plan as a checklist and waits for your confirmation before changing
-anything. While `.claude/plan.md` is only comments it counts as unwritten, and `/plan` asks you
-for a plan rather than executing the template.
+`/plan` splits the plan into tasks and writes them beside it, so `docs/pricing-page-plan.md`
+becomes `docs/pricing-page-tasks.md` and `.claude/plan.md` becomes `.claude/tasks.md`. Each task
+names the context to load, its in-scope and out-of-scope limits, its acceptance criteria and
+one command that verifies it, so a task can also be run on its own in a fresh session. The task
+file is the only thing written before you confirm, and it is the execution surface afterwards:
+`/plan` ticks each task off and records the evidence there, leaving your plan file untouched.
+
+While `.claude/plan.md` is only comments it counts as unwritten, and `/plan` asks you for a
+plan file rather than executing the template.
 
 ### Slash commands
 
