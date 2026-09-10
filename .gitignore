@@ -1,0 +1,15 @@
+# Downloaded third-party binaries (WP-CLI, Elementor, mcp-adapter, Hello Elementor),
+# a few tens of megabytes, and not ours to redistribute. Re-fetch with:
+#   node scripts/fetch-packages.mjs
+cache/
+
+# Projects belong outside the kit, and `wpdev new` refuses to create one in here. These are
+# ignored anyway so that an accident can never be committed.
+.env
+.elementor-mcp-credential
+wp-content/
+docker-compose.yml
+!template/docker-compose.yml
+
+*.log
+.DS_Store

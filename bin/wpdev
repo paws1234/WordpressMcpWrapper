@@ -1,0 +1,675 @@
+#!/usr/bin/env bash
+#
+# wpdev - create and drive local WordPress + Elementor + MCP projects.
+#
+# The kit lives in one place and is shared by every project; a project is just its
+# own content plus a generated .env, docker-compose.yml and .vscode/mcp.json.
+#
+set -euo pipefail
+
+KIT="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd)"
+IMAGE="${WPDEV_IMAGE:-wp-dev:php8.3}"
+PROJECTS_ROOT="${WPDEV_ROOT:-$HOME/dev}"
+REGISTRY="${WPDEV_REGISTRY:-$HOME/.config/wpdev/projects}"
+MARKER=".wpdev-project"
+COMPOSE_FILE="docker-compose.yml"
+
+die() { printf 'wpdev: %s\n' "$*" >&2; exit 1; }
+info() { printf '==> %s\n' "$*"; }
+warn() { printf 'wpdev: warning: %s\n' "$*" >&2; }
+
+usage() {
+	cat <<'USAGE'
+wpdev - local WordPress + Elementor + MCP projects
+
+  wpdev new <name> [--port 8890] [--title "My Site"] [--root DIR]
+                                            create and provision a project
+  wpdev list                                list projects and their ports
+  wpdev status [dir]                        container status for a project
+
+  wpdev up [dir]                            start containers
+  wpdev down [dir]                          stop containers (data kept)
+  wpdev destroy [dir]                       stop and delete the project's volumes
+  wpdev restart [dir]                       recreate containers (picks up mounts)
+  wpdev logs [dir]                          follow the WordPress logs
+  wpdev open [dir]                          open the site in a browser
+
+  wpdev wp <args...>                        run WP-CLI
+  wpdev shell [dir]                         shell inside the cli container
+  wpdev creds [--rotate]                    print the MCP credentials
+  wpdev smoke [dir]                         end-to-end MCP test
+  wpdev sync                                regenerate the MCP configs and CLAUDE.md from .env
+
+  wpdev add plugin <slug>                   create and mount a project plugin
+  wpdev add theme <slug>                    create and mount a project theme
+  wpdev register [dir]                      add an existing project to the registry
+  wpdev install-skills                      install /new-project, /plan and the kit's skills
+
+  wpdev image                               (re)build the shared base image
+  wpdev doctor                              check the local toolchain
+
+Commands that take [dir] default to the project containing the current directory.
+USAGE
+}
+
+slugify() {
+	printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | sed -e 's/[^a-z0-9]\+/-/g' -e 's/^-//' -e 's/-$//'
+}
+
+prettify() {
+	printf '%s' "$1" | tr '-' ' ' | sed 's/\b\(.\)/\u\1/g'
+}
+
+project_dir() {
+	local dir="${1:-$PWD}"
+	dir="$(cd "$dir" && pwd)"
+
+	while [ "$dir" != "/" ]; do
+		if [ -f "$dir/$MARKER" ]; then
+			printf '%s' "$dir"
+			return 0
+		fi
+		dir="$(dirname "$dir")"
+	done
+
+	die "not inside a wp-dev project (no $MARKER found). Try: wpdev new <name>"
+}
+
+env_value() {
+	local dir="$1" key="$2"
+	sed -n "s/^${key}=//p" "$dir/.env" | head -1 | sed -e 's/^"//' -e 's/"$//'
+}
+
+compose() {
+	local dir="$1"
+	shift
+	( cd "$dir" && docker compose "$@" )
+}
+
+wpcli() {
+	local dir="$1"
+	shift
+	compose "$dir" run --rm -T cli "$@"
+}
+
+require_docker() {
+	command -v docker >/dev/null 2>&1 || die "docker is not on PATH"
+	docker info >/dev/null 2>&1 || die "the Docker daemon is not reachable"
+}
+
+next_port() {
+	local highest=8887 dir port candidate file
+
+	while IFS= read -r dir; do
+		file="$dir/.env"
+		[ -f "$file" ] || continue
+		port="$(sed -n 's/^WP_PORT=//p' "$file" | head -1)"
+		if [ -n "$port" ] && [ "$port" -gt "$highest" ] 2>/dev/null; then
+		highest="$port"
+		fi
+	done < <(project_paths)
+
+	candidate=$(( highest + 1 ))
+	while ss -ltn 2>/dev/null | awk '{print $4}' | grep -q ":${candidate}\$"; do
+		candidate=$(( candidate + 1 ))
+	done
+
+	printf '%s' "$candidate"
+}
+
+register_project() {
+	local dir="$1"
+	mkdir -p "$(dirname "$REGISTRY")"
+	touch "$REGISTRY"
+	grep -qxF "$dir" "$REGISTRY" || printf '%s\n' "$dir" >> "$REGISTRY"
+}
+
+# Every known project: those registered explicitly (anywhere on disk) plus any
+# project directory sitting under PROJECTS_ROOT.
+project_paths() {
+	local dir
+	{
+		if [ -f "$REGISTRY" ]; then
+			while IFS= read -r dir; do
+				[ -n "$dir" ] && [ -f "$dir/$MARKER" ] && printf '%s\n' "$dir"
+			done < "$REGISTRY"
+		fi
+
+		for dir in "$PROJECTS_ROOT"/*/; do
+			[ -f "${dir}${MARKER}" ] && printf '%s\n' "${dir%/}"
+		done
+	} | sort -u
+}
+
+require_image() {
+	if docker image inspect "$IMAGE" >/dev/null 2>&1; then
+		return 0
+	fi
+	info "base image $IMAGE not present; building it once"
+	cmd_image
+}
+
+cmd_image() {
+	require_docker
+	node "$KIT/scripts/fetch-packages.mjs"
+	info "building $IMAGE (host uid $(id -u), gid $(id -g))"
+	docker build \
+		--build-arg "HOST_UID=$(id -u)" \
+		--build-arg "HOST_GID=$(id -g)" \
+		-t "$IMAGE" \
+		-f "$KIT/image/Dockerfile" \
+		"$KIT"
+	info "image ready"
+}
+
+write_env() {
+	local dir="$1" slug="$2" title="$3" port="$4"
+
+	cat > "$dir/.env" <<EOF
+# Generated by wpdev. One per project; safe to edit by hand.
+PROJECT_NAME=$slug
+PROJECT_SLUG=$slug
+PROJECT_THEME=${slug}-theme
+
+WP_PORT=$port
+SITE_URL=http://localhost:$port
+SITE_TITLE="$title"
+
+ADMIN_USER=admin
+ADMIN_PASSWORD=password
+ADMIN_EMAIL=dev@example.com
+
+# Absolute paths into the kit, so the shared plugin has one source of truth.
+WP_KIT=$KIT
+WP_AGENT_PLUGIN_DIR=$KIT/shared/plugins/wp-agent-bridge
+WPDEV_IMAGE=$IMAGE
+
+# Third-party packages installed from /opt/packages in the image at setup time.
+BUNDLED_PLUGINS="elementor mcp-adapter"
+BUNDLED_THEMES="hello-elementor"
+
+# Read by the stdio MCP proxy through envFile, so that server never prompts.
+WP_API_URL=http://localhost:$port/wp-json/mcp/mcp-adapter-default-server
+WP_API_USERNAME=admin
+WP_API_PASSWORD=
+EOF
+
+	chmod 600 "$dir/.env"
+}
+
+write_mcp_json() {
+	local dir="$1" port="$2"
+
+	mkdir -p "$dir/.vscode"
+
+	cat > "$dir/.vscode/mcp.json" <<EOF
+{
+	"inputs": [
+		{
+			"type": "promptString",
+			"id": "elementorMcpBasic",
+			"description": "Elementor MCP credentials (run: wpdev creds)",
+			"password": true
+		}
+	],
+	"servers": {
+		"elementor": {
+			"type": "http",
+			"url": "http://localhost:$port/wp-json/elementor/mcp",
+			"headers": {
+				"Authorization": "Basic \${input:elementorMcpBasic}"
+			}
+		},
+		"wordpress": {
+			"type": "stdio",
+			"command": "npx",
+			"args": [ "-y", "@automattic/mcp-wordpress-remote" ],
+			"envFile": "\${workspaceFolder}/.env"
+		},
+		"playwright": {
+			"type": "stdio",
+			"command": "npx",
+			"args": [ "-y", "@playwright/mcp@latest" ]
+		}
+	}
+}
+EOF
+}
+
+write_claude_json() {
+	local dir="$1" port="$2" credential="" elementor_auth=""
+
+	# Claude Code reads .mcp.json at the project root. So does the VS Code Agent Host, which
+	# reads harness-agnostic MCP config natively instead of reading .vscode/mcp.json directly,
+	# so this one file serves both clients.
+	#
+	# Claude Code has no envFile for stdio servers and no ${input:...} prompts, so the stdio
+	# proxy sources .env itself before exec'ing the proxy. A stdio server's working directory
+	# is not guaranteed, so the path is absolute.
+	#
+	# The Elementor server needs a literal Basic header. This used to be Claude Code's
+	# `headersHelper`, but VS Code does not implement that field, so the Agent Host read the
+	# server with no Authorization header at all and every call failed with 401. A literal
+	# header is understood by both clients. It lives here rather than in .vscode/mcp.json
+	# because that file is committed and this one is not.
+	if [ -s "$dir/.elementor-mcp-credential" ]; then
+		credential="$(tr -d '\r\n' < "$dir/.elementor-mcp-credential")"
+	fi
+	if [ -n "$credential" ]; then
+		elementor_auth=",
+			\"headers\": {
+				\"Authorization\": \"Basic $credential\"
+			}"
+	fi
+
+	cat > "$dir/.mcp.json" <<EOF
+{
+	"mcpServers": {
+		"elementor": {
+			"type": "http",
+			"url": "http://localhost:$port/wp-json/elementor/mcp"$elementor_auth
+		},
+		"wordpress": {
+			"type": "stdio",
+			"command": "bash",
+			"args": [
+				"-c",
+				"set -a; . '$dir/.env'; set +a; exec npx -y @automattic/mcp-wordpress-remote"
+			]
+		},
+		"playwright": {
+			"type": "stdio",
+			"command": "npx",
+			"args": [ "-y", "@playwright/mcp@latest" ]
+		}
+	}
+}
+EOF
+
+	# The file carries a credential, so keep it owner-only like the credential file itself.
+	# Run `wpdev sync` after moving a project: the paths are absolute.
+	chmod 600 "$dir/.mcp.json"
+}
+
+write_claude_md() {
+	local dir="$1"
+
+	# Claude Code (CLI and VS Code extension) reads CLAUDE.md at session start, as do several
+	# other agents. Without it an agent has no idea wpdev exists, which MCP server does what,
+	# or that plugin directories it creates by hand are invisible to the container.
+	sed -e "s|__PROJECT_NAME__|$(env_value "$dir" PROJECT_NAME)|g" \
+		-e "s|__SITE_URL__|$(env_value "$dir" SITE_URL)|g" \
+		-e "s|__PROJECT_THEME__|$(env_value "$dir" PROJECT_THEME)|g" \
+		"$KIT/template/CLAUDE.md" > "$dir/CLAUDE.md"
+}
+
+write_secrets() {
+	local dir="$1" user password encoded
+
+	user="$(env_value "$dir" ADMIN_USER)"
+	[ -n "$user" ] || user="admin"
+
+	password="$(wpcli "$dir" user application-password create "$user" \
+		"wpdev ($(date -u +%Y-%m-%dT%H:%M:%SZ))" --porcelain 2>/dev/null | tail -1 | tr -d '\r\n')"
+
+	[ -n "$password" ] || die "could not create an application password"
+
+	# The stdio proxy reads this from .env via envFile.
+	sed -i "s|^WP_API_PASSWORD=.*|WP_API_PASSWORD=$password|" "$dir/.env"
+
+	# Elementor's HTTP server needs a literal Basic header, and VS Code has no
+	# variable substitution for header values, so stash the encoded pair for
+	# `wpdev creds` to print.
+	encoded="$(printf '%s:%s' "$user" "$password" | base64 -w0)"
+	printf '%s\n' "$encoded" > "$dir/.elementor-mcp-credential"
+	chmod 600 "$dir/.elementor-mcp-credential"
+
+	# .mcp.json embeds this value, so re-render it now that the credential has changed.
+	# Doing it here rather than at the call sites means a rotation cannot be forgotten.
+	local project_port
+	project_port="$(env_value "$dir" WP_PORT)"
+	if [ -n "$project_port" ]; then
+		write_claude_json "$dir" "$project_port"
+	fi
+}
+
+add_mount() {
+	local dir="$1" line="$2"
+
+	if grep -qF -- "$line" "$dir/$COMPOSE_FILE"; then
+		echo "    already mounted"
+		return 0
+	fi
+
+	sed -i "s|^    # wpdev:extra-mounts|    - ${line}\n    # wpdev:extra-mounts|" "$dir/$COMPOSE_FILE"
+}
+
+cmd_install_skills() {
+	local base skill_dir name
+
+	# Personal skill directories. Different clients read different paths, so install into
+	# each rather than guessing which one you use. Skills with user-invocable frontmatter
+	# appear as slash commands too, which is why /new-project and /plan live here rather
+	# than as prompt files: VS Code no longer loads prompt files in Agent Host sessions.
+	local -a bases=(
+		"$HOME/.agents/skills"
+		"${CLAUDE_CONFIG_DIR:-$HOME/.claude}/skills"
+	)
+
+	for base in "${bases[@]}"; do
+		mkdir -p "$base"
+
+		for skill_dir in "$KIT"/skills/*/; do
+			[ -d "$skill_dir" ] || continue
+			name="$(basename "$skill_dir")"
+			mkdir -p "$base/$name"
+			cp "$skill_dir/SKILL.md" "$base/$name/SKILL.md"
+			info "installed $name -> $base/$name/SKILL.md"
+		done
+	done
+}
+
+write_plan_template() {
+	# Two statements, not one: under `set -u` bash declares the new locals before it
+	# expands the right-hand side, so `$dir` inside a combined `local` is still unbound.
+	local dir="$1"
+	local target="$dir/.claude/plan.md"
+
+	# Never overwrite a plan the user has written. The template is entirely an HTML comment,
+	# so /plan can tell "not written yet" from "here is my plan" without a marker token.
+	if [ -s "$target" ]; then
+		return 0
+	fi
+
+	mkdir -p "$dir/.claude"
+	cp "$KIT/template/plan.md" "$target"
+	info "created .claude/plan.md - write your plan there, then run /plan"
+}
+
+cmd_new() {
+	local name="" port="" title="" root="$PROJECTS_ROOT"
+
+	while [ $# -gt 0 ]; do
+		case "$1" in
+			--port) port="${2:?--port needs a value}"; shift 2 ;;
+			--title) title="${2:?--title needs a value}"; shift 2 ;;
+			--root) root="${2:?--root needs a value}"; shift 2 ;;
+			-h|--help) usage; return 0 ;;
+			-*) die "unknown option: $1" ;;
+			*) name="$1"; shift ;;
+		esac
+	done
+
+	[ -n "$name" ] || { usage; exit 1; }
+
+	local slug theme target
+	slug="$(slugify "$name")"
+	[ -n "$slug" ] || die "could not derive a slug from '$name'"
+	theme="${slug}-theme"
+	target="$root/$slug"
+
+	# The kit is a repository, so a project created inside it would be committed along with the
+	# wrapper. `realpath -m` normalises a path without requiring it to exist yet, so a --root
+	# that points into the kit is caught before anything is created on disk.
+	local kit_real
+	kit_real="$(realpath -m "$KIT")"
+	case "$(realpath -m "$target")" in
+		"$kit_real"|"$kit_real"/*)
+			die "refusing to create a project inside the kit ($KIT) - choose a root outside it with --root"
+			;;
+	esac
+
+	[ -e "$target" ] && die "$target already exists"
+	[ -n "$title" ] || title="$(prettify "$slug")"
+	[ -n "$port" ] || port="$(next_port)"
+
+	require_docker
+	require_image
+
+	info "creating $target"
+	mkdir -p \
+		"$target/wp-content/plugins" \
+		"$target/wp-content/themes/$theme" \
+		"$target/wp-content/uploads" \
+		"$target/.vscode" \
+		"$target/docs"
+
+	: > "$target/$MARKER"
+	cp "$KIT/template/$COMPOSE_FILE" "$target/$COMPOSE_FILE"
+	cp "$KIT/template/.gitignore" "$target/.gitignore"
+	cp "$KIT/docs/SETUP.md" "$KIT/docs/PROMPTS.md" "$target/docs/"
+
+	sed -e "s|__PROJECT_NAME__|$title|g" -e "s|__PROJECT_THEME__|$theme|g" \
+		"$KIT/template/theme/style.css" > "$target/wp-content/themes/$theme/style.css"
+	sed -e "s|__PROJECT_THEME__|$theme|g" \
+		"$KIT/template/theme/functions.php" > "$target/wp-content/themes/$theme/functions.php"
+
+	write_env "$target" "$slug" "$title" "$port"
+	write_mcp_json "$target" "$port"
+	write_claude_json "$target" "$port"
+	write_claude_md "$target"
+	write_plan_template "$target"
+	register_project "$target"
+
+	bash "$KIT/scripts/setup-site.sh" "$target"
+
+	info "generating MCP credentials"
+	write_secrets "$target"
+
+	cat <<EOF
+
+Project ready.
+
+  cd $target
+  wpdev smoke            # verify the whole chain
+  wpdev creds            # the two values to paste into VS Code
+
+Then open the folder in VS Code and start both MCP servers from the MCP view.
+
+Claude Code / Claude VS Code extension:
+  .mcp.json is already generated and needs no credentials pasted. Approve the
+  project-scoped servers the first time you run it.
+
+CLAUDE.md in the project root explains the workflow to any agent working here.
+EOF
+}
+
+cmd_list() {
+	local dir port name state
+
+	printf '%-42s %-6s %s\n' 'PROJECT' 'PORT' 'STATUS'
+
+	while IFS= read -r dir; do
+		port="$(env_value "$dir" WP_PORT)"
+		name="$(basename "$dir")"
+		state="$(compose "$dir" ps --services --status running 2>/dev/null | tr '\n' ' ' | sed -e 's/^ *//' -e 's/ *$//' || true)"
+		[ -n "$state" ] || state="stopped"
+		printf '%-42s %-6s %s\n' "$name" "$port" "$state"
+	done < <(project_paths)
+}
+
+cmd_creds() {
+	local dir credential
+
+	dir="$(project_dir)"
+
+	if [ "${1:-}" = "--rotate" ] || [ ! -s "$dir/.elementor-mcp-credential" ]; then
+		info "creating a fresh application password"
+		write_secrets "$dir"
+	fi
+
+	credential="$(cat "$dir/.elementor-mcp-credential")"
+
+	echo "== wordpress (stdio proxy, already wired) =="
+	echo "   .env holds WP_API_PASSWORD, and the server loads it via envFile,"
+	echo "   so there is nothing to paste for this one."
+	echo
+	echo "== elementor (HTTP, paste once) =="
+	echo "   $credential"
+	echo
+	echo "Both are secrets: do not commit them or paste them into a chat window."
+}
+
+cmd_sync() {
+	local dir port
+
+	dir="$(project_dir)"
+	port="$(env_value "$dir" WP_PORT)"
+	[ -n "$port" ] || die "WP_PORT is not set in $dir/.env"
+
+	write_mcp_json "$dir" "$port"
+	write_claude_json "$dir" "$port"
+	write_claude_md "$dir"
+	write_plan_template "$dir"
+	info "regenerated .vscode/mcp.json, .mcp.json and CLAUDE.md for port $port"
+
+	# Without that file the Elementor server is generated with no Authorization header, which
+	# surfaces only as a 401 in the client. Say so here, where the fix is obvious.
+	if [ ! -s "$dir/.elementor-mcp-credential" ]; then
+		warn "no .elementor-mcp-credential - run 'wpdev creds', then 'wpdev sync' again"
+	fi
+}
+
+cmd_add() {
+	local kind="${1:-}" name="${2:-}" dir slug display
+
+	[ -n "$kind" ] && [ -n "$name" ] || die "usage: wpdev add plugin|theme <slug>"
+
+	dir="$(project_dir)"
+	slug="$(slugify "$name")"
+	[ -n "$slug" ] || die "invalid slug: $name"
+
+	case "$kind" in
+		plugin)
+			local plugin_dir="$dir/wp-content/plugins/$slug"
+			[ -e "$plugin_dir" ] && die "$plugin_dir already exists"
+			mkdir -p "$plugin_dir"
+			display="$(prettify "$slug")"
+			cat > "$plugin_dir/$slug.php" <<EOF
+<?php
+/**
+ * Plugin Name: $display
+ * Description: Project plugin.
+ * Version:     0.1.0
+ * License:     GPL-2.0-or-later
+ * Text Domain: $slug
+ */
+
+defined( 'ABSPATH' ) || exit;
+EOF
+			add_mount "$dir" "./wp-content/plugins/$slug:/var/www/html/wp-content/plugins/$slug"
+			info "created wp-content/plugins/$slug"
+			info "activating"
+			compose "$dir" up -d wordpress >/dev/null
+			wpcli "$dir" plugin activate "$slug" || info "activate it once the container is ready: wpdev wp plugin activate $slug"
+			;;
+		theme)
+			local theme_dir="$dir/wp-content/themes/$slug"
+			[ -e "$theme_dir" ] && die "$theme_dir already exists"
+			mkdir -p "$theme_dir"
+			sed -e "s|__PROJECT_NAME__|$(prettify "$slug")|g" -e "s|__PROJECT_THEME__|$slug|g" \
+				"$KIT/template/theme/style.css" > "$theme_dir/style.css"
+			sed -e "s|__PROJECT_THEME__|$slug|g" \
+				"$KIT/template/theme/functions.php" > "$theme_dir/functions.php"
+			add_mount "$dir" "./wp-content/themes/$slug:/var/www/html/wp-content/themes/$slug"
+			info "created wp-content/themes/$slug"
+			compose "$dir" up -d wordpress >/dev/null
+			;;
+		*)
+			die "unknown type: $kind (expected plugin or theme)"
+			;;
+	esac
+}
+
+cmd_doctor() {
+	local dir=""
+	printf 'kit           %s\n' "$KIT"
+	printf 'image         %s %s\n' "$IMAGE" "$(docker image inspect "$IMAGE" >/dev/null 2>&1 && echo present || echo MISSING)"
+	printf 'cache         %s file(s)\n' "$(find "$KIT/cache/packages" -name '*.zip' 2>/dev/null | wc -l | tr -d ' ')"
+	printf 'wp-cli        %s\n' "$([ -x "$KIT/cache/bin/wp" ] && echo present || echo MISSING)"
+	printf 'node          %s\n' "$(node -v 2>/dev/null || echo MISSING)"
+	printf 'docker        %s\n' "$(docker --version 2>/dev/null || echo MISSING)"
+	printf 'compose       %s\n' "$(docker compose version --short 2>/dev/null || echo MISSING)"
+	printf 'host ids      %s:%s\n' "$(id -u)" "$(id -g)"
+	printf 'projects root %s\n' "$PROJECTS_ROOT"
+
+	if dir="$(project_dir 2>/dev/null)"; then
+		printf 'project       %s (port %s)\n' "$dir" "$(env_value "$dir" WP_PORT)"
+	else
+		printf 'project       (not inside one)\n'
+	fi
+}
+
+main() {
+	local command="${1:-}"
+	[ $# -gt 0 ] && shift || true
+
+	case "$command" in
+		new) cmd_new "$@" ;;
+		list|ls) cmd_list ;;
+		status)
+			local dir; dir="$(project_dir "${1:-$PWD}")"
+			compose "$dir" ps
+			;;
+		up)
+			local dir; dir="$(project_dir "${1:-$PWD}")"
+			require_image
+			compose "$dir" up -d db wordpress
+			;;
+		down)
+			local dir; dir="$(project_dir "${1:-$PWD}")"
+			compose "$dir" down
+			;;
+		destroy)
+			local dir; dir="$(project_dir "${1:-$PWD}")"
+			printf 'This deletes the database and WordPress volumes for %s. Type the project slug to confirm: ' "$(basename "$dir")" >&2
+			read -r reply
+			[ "$reply" = "$(basename "$dir")" ] || die "aborted"
+			compose "$dir" down -v
+			;;
+		restart)
+			local dir; dir="$(project_dir "${1:-$PWD}")"
+			compose "$dir" up -d --force-recreate db wordpress
+			;;
+		logs)
+			local dir; dir="$(project_dir "${1:-$PWD}")"
+			compose "$dir" logs -f wordpress
+			;;
+		open)
+			local dir url; dir="$(project_dir "${1:-$PWD}")"
+			url="$(env_value "$dir" SITE_URL)"
+			command -v xdg-open >/dev/null 2>&1 && xdg-open "$url" || printf '%s\n' "$url"
+			;;
+		wp)
+			local dir; dir="$(project_dir)"
+			wpcli "$dir" "$@"
+			;;
+		shell)
+			local dir; dir="$(project_dir "${1:-$PWD}")"
+			( cd "$dir" && docker compose run --rm --entrypoint bash cli )
+			;;
+		creds) cmd_creds "$@" ;;
+		sync) cmd_sync ;;
+		smoke)
+			local dir; dir="$(project_dir "${1:-$PWD}")"
+			node "$KIT/scripts/smoke-test.mjs" "$dir"
+			;;
+		setup)
+			local dir; dir="$(project_dir "${1:-$PWD}")"
+			bash "$KIT/scripts/setup-site.sh" "$dir"
+			;;
+		add) cmd_add "$@" ;;
+		register)
+			local rdir; rdir="$(project_dir "${1:-$PWD}")"
+			register_project "$rdir"
+			info "registered $rdir"
+			;;
+		install-skills) cmd_install_skills ;;
+		image) cmd_image ;;
+		doctor) cmd_doctor ;;
+		''|-h|--help|help) usage ;;
+		*) die "unknown command: $command (try: wpdev help)" ;;
+	esac
+}
+
+main "$@"

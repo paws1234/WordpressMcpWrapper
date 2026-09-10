@@ -1,0 +1,16 @@
+# Secrets and machine-specific config; never committed.
+.env
+.mcp.json
+
+# Claude Code keeps its per-project approvals here.
+.claude/settings.local.json
+
+# WordPress runtime state - not project code.
+wp-content/uploads/
+wp-content/upgrade/
+wp-content/cache/
+wp-content/debug.log
+*.log
+
+.DS_Store
+Thumbs.db

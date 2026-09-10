@@ -1,0 +1,16 @@
+/*
+Theme Name:   __PROJECT_NAME__
+Theme URI:    https://example.com
+Description:  Child theme of Hello Elementor for __PROJECT_NAME__.
+Author:       __PROJECT_NAME__
+Template:     hello-elementor
+Version:      0.1.0
+License:      GNU General Public License v3 or later
+License URI:  https://www.gnu.org/licenses/gpl-3.0.html
+Text Domain:  __PROJECT_THEME__
+*/
+
+/*
+ * Presentation only. Anything the site must keep when the theme changes - post
+ * types, fields, shortcodes - belongs in the wp-agent-bridge plugin.
+ */

@@ -1,0 +1,7 @@
+# The image only needs its own definition and the download cache. Sending the
+# template, the shared plugin, or any project code would just slow the build.
+*
+!image
+!image/**
+!cache
+!cache/**
