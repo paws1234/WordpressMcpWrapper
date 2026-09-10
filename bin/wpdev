@@ -8,6 +8,14 @@
 set -euo pipefail
 
 KIT="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd)"
+
+# Per-machine settings live outside the repo, so a clone never carries someone else's
+# layout. Sourced first; anything it sets (or exports) is picked up by the defaults below.
+CONFIG="${WPDEV_CONFIG:-$HOME/.config/wpdev/config}"
+if [ -f "$CONFIG" ]; then
+	. "$CONFIG"
+fi
+
 IMAGE="${WPDEV_IMAGE:-wp-dev:php8.3}"
 PROJECTS_ROOT="${WPDEV_ROOT:-$HOME/dev}"
 REGISTRY="${WPDEV_REGISTRY:-$HOME/.config/wpdev/projects}"

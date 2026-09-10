@@ -16,6 +16,16 @@ The default root is `~/dev/<project-name>`; override it with `--root`. This repo
 wrapper, not a project. `wpdev new` refuses to create a project inside the kit, because such a
 project would be committed along with the wrapper.
 
+A clone keeps its own layout without touching the repo: put machine settings in
+`~/.config/wpdev/config`, which `bin/wpdev` sources on every run.
+
+```bash
+: "${WPDEV_ROOT:=$HOME/projects}"    # where wpdev new puts projects
+```
+
+That is the whole fix for "the default root is wrong on this machine". An exported
+`WPDEV_ROOT` still wins over the file.
+
 ## Requirements
 
 - Docker with the Compose plugin

@@ -1,10 +1,17 @@
 # Copied verbatim into every project. Everything project-specific comes from the
 # .env file beside it, which is why this file is identical everywhere.
 #
-# Command: it uses the db_data and wp_data volumes plus the project host directory it
-# was invoked from.
+# THIS IS A TEMPLATE, NOT A STACK. There is no .env beside it here, so running it from
+# the kit leaves every ${...} below empty and compose aborts with
+# "invalid spec: :/var/www/html/wp-content/plugins/wp-agent-bridge". Start a project
+# instead, and let wpdev use the project's own copy:
+#
+#     wpdev up <project-dir>          # or: cd <project-dir> && wpdev up
+#
+# Compose reads .env from THIS file's directory, not the shell's, so a project's copy
+# works from any working directory.
 
-name: ${PROJECT_NAME}
+name: ${PROJECT_NAME:?template file with no .env - use "wpdev up <dir>"}
 
 x-wordpress-env: &wordpress-env
     WORDPRESS_DB_HOST: db:3306
@@ -27,7 +34,7 @@ x-wordpress-volumes: &wordpress-volumes
     # Core files live in a named volume that the image populates on first run.
     - wp_data:/var/www/html
     # The shared plugin is mounted from the kit: one copy, every project.
-    - ${WP_AGENT_PLUGIN_DIR}:/var/www/html/wp-content/plugins/wp-agent-bridge
+    - ${WP_AGENT_PLUGIN_DIR:?template file with no .env - use "wpdev up <dir>"}:/var/www/html/wp-content/plugins/wp-agent-bridge
     # Project code and uploads, so the agent can read and write them directly.
     - ./wp-content/themes/${PROJECT_THEME}:/var/www/html/wp-content/themes/${PROJECT_THEME}
     - ./wp-content/uploads:/var/www/html/wp-content/uploads
